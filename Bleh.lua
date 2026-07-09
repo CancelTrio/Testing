@@ -474,7 +474,6 @@ function _p.Init(pid, gid)
         _p._bd = best
         _st.bd = best
         
-        -- If LALOL confirmed, use as backdoor, otherwise use as infected script
         if best.InfectionType == "CONFIRMED_BACKDOOR" then
             _p._m = "BACKDOOR"
             _st.mode = "BACKDOOR"
@@ -482,8 +481,7 @@ function _p.Init(pid, gid)
             _st.injected = true
             
             _toast("[Pansploit] LALOL CONFIRMED!", 
-                "Backdoor: " .. best.Name .. "\nType: " .. best.Type .. "\nMethod: Execution Test", 
-                6)
+                "Backdoor: " .. best.Name .. "\nType: " .. best.Type, 6)
             
             print("PANS_BACKDOOR_CONFIRMED:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type)
         else
@@ -495,15 +493,14 @@ function _p.Init(pid, gid)
             _st.injected = true
             
             _toast("[Pansploit] INFECTED SCRIPT", 
-                "Path: " .. best.Name .. "\nScore: " .. best.Score .. "/100\nType: " .. best.InfectionType, 
-                5)
+                "Path: " .. best.Name .. "\nScore: " .. best.Score, 5)
             
             print("PANS_INFECTED_FOUND:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type .. ":" .. best.InfectionType)
         end
         
         print("PANS_MODE:BACKDOOR")
         
-        -- Monitor
+        -- Monitor backdoor removal
         spawn(function()
             while _p._a and best.Object and best.Object.Parent do
                 wait(1)
@@ -515,14 +512,8 @@ function _p.Init(pid, gid)
             end
         end)
         
-        -- Monitor player leaving
-        local plr = game:GetService("Players").LocalPlayer
-        if plr then
-            plr.Destroying:Connect(function()
-                _p._a = false
-                print("PANS_DISCONNECT:PLAYER_LEFT")
-            end)
-        end
+        -- TP Handler - monitor player leaving
+        _setupTPHandler()
         
         return true, best
     end
@@ -533,7 +524,7 @@ function _p.Init(pid, gid)
     
     return false, nil
 end
-
+    
 -- Execute
 function _p.Exec(code, useBackdoor)
     if not _p._a and _p._m ~= "CLIENT" then
