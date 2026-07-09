@@ -1,8 +1,3 @@
---[[
-    PanScript Backdoor System v10.1 - COMPLETE WITH TP HANDLER
-    Features: LALOL execution test, infected script detection, mode switching, TP handler
-]]
-
 local _p = {}
 _p._a = false
 _p._m = "CLIENT"
