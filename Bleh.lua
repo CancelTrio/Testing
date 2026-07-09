@@ -246,26 +246,119 @@ function _p.Respawn()
     return true
 end
 
--- Mode functions
+-- FIXED MODE FUNCTIONS WITH RESCAN
+
 function _p.SwitchMode()
-    _p._m = _p._m == "BACKDOOR" and "CLIENT" or "BACKDOOR"
-    _st.mode = _p._m
-    print("PANS_MODE_SWITCHED:" .. _p._m .. ":" .. tostring(_p._a))
-    return _p._m
+    local newMode = _p._m == "BACKDOOR" and "CLIENT" or "BACKDOOR"
+    return _p.SetMode(newMode)
 end
 
 function _p.SetMode(mode)
-    _p._m = mode
-    _st.mode = mode
-    print("PANS_MODE_SET:" .. mode .. ":" .. tostring(_p._a))
-    return _p._m
+    -- If switching to BACKDOOR from CLIENT, rescan first
+    if mode == "BACKDOOR" and (_p._m == "CLIENT" or not _p._a) then
+        print("PANS_RESCAN_START")
+        
+        -- Clear old backdoor data
+        _p._bd = nil
+        _p._infected = nil
+        _st.bd = nil
+        _st.infected = nil
+        _p._a = false
+        
+        -- Rescan for backdoors
+        local backdoors = _detectBackdoors()
+        
+        if #backdoors > 0 then
+            -- Found backdoor - register it
+            local best = backdoors[1]
+            _p._bd = best
+            _st.bd = best
+            
+            if best.InfectionType == "CONFIRMED_BACKDOOR" then
+                _p._m = "BACKDOOR"
+                _st.mode = "BACKDOOR"
+                _p._a = true
+                _st.injected = true
+                
+                _toast("[Pansploit] BACKDOOR FOUND", 
+                    "Switched to: " .. best.Name .. "\nType: " .. best.Type, 4)
+                
+                print("PANS_RESCAN_SUCCESS:CONFIRMED:" .. best.Path)
+                
+                -- Setup monitoring
+                _setupBackdoorMonitor()
+                _setupTPHandler()
+            else
+                _p._infected = best
+                _st.infected = best
+                _p._m = "BACKDOOR"
+                _st.mode = "BACKDOOR"
+                _p._a = true
+                _st.injected = true
+                
+                _toast("[Pansploit] INFECTED FOUND", 
+                    "Switched to: " .. best.Name .. "\nScore: " .. best.Score, 4)
+                
+                print("PANS_RESCAN_SUCCESS:INFECTED:" .. best.Path)
+                
+                _setupBackdoorMonitor()
+                _setupTPHandler()
+            end
+            
+            print("PANS_MODE_SET:BACKDOOR:true")
+            return "BACKDOOR"
+        else
+            -- No backdoors found - stay in CLIENT mode
+            _p._m = "CLIENT"
+            _st.mode = "CLIENT"
+            _p._a = false
+            _st.injected = false
+            
+            _toast("[Pansploit] NO BACKDOOR", 
+                "Rescan found nothing\nStaying in CLIENT mode", 3)
+            
+            print("PANS_RESCAN_FAILED:NO_BACKDOOR")
+            print("PANS_MODE_SET:CLIENT:false")
+            return "CLIENT"
+        end
+    else
+        -- Normal mode switch
+        _p._m = mode
+        _st.mode = mode
+        
+        if mode == "CLIENT" then
+            _p._a = false
+            _st.injected = false
+            print("PANS_MODE_SET:CLIENT:false")
+        else
+            print("PANS_MODE_SET:" .. mode .. ":" .. tostring(_p._a))
+        end
+        
+        return _p._m
+    end
 end
 
 function _p.GetMode()
     return _p._m
 end
 
--- FIXED TP Handler
+-- Backdoor monitor setup
+local function _setupBackdoorMonitor()
+    local best = _p._bd or _p._infected
+    if not best then return end
+    
+    spawn(function()
+        while _p._a and best.Object and best.Object.Parent do
+            wait(1)
+        end
+        if _p._a then
+            print("PANS_BACKDOOR_REMOVED")
+            _disconnect("BACKDOOR_REMOVED")
+        end
+    end)
+end
+
+-- TP Handler
 local function _setupTPHandler()
     local Players = game:GetService("Players")
     local plr = Players.LocalPlayer
@@ -283,12 +376,10 @@ local function _setupTPHandler()
     
     local originalPath = originalObject:GetFullName()
     local originalName = originalObject.Name
-    local originalParent = originalObject.Parent
     
     print("PANS_MONITOR_START:" .. originalPath)
     
-    -- === MAIN USER MONITORING ===
-    
+    -- Main user monitoring
     plr.CharacterRemoving:Connect(function()
         print("PANS_MAINUSER:CharacterRemoving")
         _disconnect("MAINUSER_CHAR_REMOVED")
@@ -306,13 +397,11 @@ local function _setupTPHandler()
         end
     end)
     
-    -- === BACKDOOR MONITORING ===
-    
+    -- Backdoor monitoring
     spawn(function()
         while _p._a do
             wait(0.5)
             
-            -- Check if object still exists
             local exists = pcall(function()
                 return originalObject.Parent
             end)
@@ -323,7 +412,6 @@ local function _setupTPHandler()
                 break
             end
             
-            -- Check path
             local currentPath = ""
             pcall(function()
                 currentPath = originalObject:GetFullName()
@@ -335,7 +423,6 @@ local function _setupTPHandler()
                 break
             end
             
-            -- Check name
             if originalObject.Name ~= originalName then
                 print("PANS_BACKDOOR:Renamed:" .. originalObject.Name)
                 _disconnect("BACKDOOR_RENAMED")
@@ -355,7 +442,7 @@ local function _setupTPHandler()
                     if originalObject.Parent == nil then
                         print("PANS_BACKDOOR:ParentNil")
                         _disconnect("BACKDOOR_PARENT_NIL")
-                    elseif originalObject.Parent ~= originalParent then
+                    else
                         print("PANS_BACKDOOR:ParentChanged")
                         _disconnect("BACKDOOR_REPARENTED")
                     end
@@ -371,7 +458,6 @@ local function _setupTPHandler()
                 end)
             end)
             
-            -- Wait until disconnected
             while _p._a do wait(0.1) end
             
             pcall(function() conn1:Disconnect() end)
@@ -380,8 +466,7 @@ local function _setupTPHandler()
         end
     end)
     
-    -- === GAME MONITORING ===
-    
+    -- Game monitoring
     local lastGameId = game.GameId
     spawn(function()
         while _p._a do
@@ -664,7 +749,8 @@ function _p.Init(pid, gid)
         
         print("PANS_MODE:BACKDOOR")
         
-        -- Setup TP handler
+        -- Setup monitoring
+        _setupBackdoorMonitor()
         _setupTPHandler()
         
         return true, best
