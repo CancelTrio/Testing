@@ -26,6 +26,74 @@ if not _G._pans_data then
 end
 local _st = _G._pans_data
 
+-- Disconnect helper
+local function _disconnect(reason)
+    if not _p._a then return end
+    
+    _p._a = false
+    _st.injected = false
+    _p._m = "CLIENT"
+    _st.mode = "CLIENT"
+    _p._bd = nil
+    _p._infected = nil
+    _st.bd = nil
+    _st.infected = nil
+    
+    print("PANS_DISCONNECT:" .. reason)
+    print("PANS_MODE:CLIENT")
+    
+    -- Show disconnect toast
+    spawn(function()
+        wait(0.3)
+        local plr = game:GetService("Players").LocalPlayer
+        if plr then
+            pcall(function()
+                for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
+                    if g.Name:find("PanToast") then g:Destroy() end
+                end
+                
+                local sg = Instance.new("ScreenGui")
+                sg.Name = "PanDC_" .. tostring(math.random(1000,9999))
+                sg.ResetOnSpawn = false
+                sg.Parent = game:GetService("CoreGui") or plr:WaitForChild("PlayerGui")
+                
+                local fr = Instance.new("Frame")
+                fr.Size = UDim2.new(0, 320, 0, 90)
+                fr.Position = UDim2.new(0.5, -160, 0.5, -45)
+                fr.BackgroundColor3 = Color3.fromRGB(40, 0, 0)
+                fr.BorderSizePixel = 0
+                fr.Parent = sg
+                
+                Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 10)
+                
+                local tl = Instance.new("TextLabel")
+                tl.Size = UDim2.new(1, -20, 0, 30)
+                tl.Position = UDim2.new(0, 10, 0, 10)
+                tl.BackgroundTransparency = 1
+                tl.Text = "[Pansploit] DISCONNECTED"
+                tl.TextColor3 = Color3.fromRGB(255, 80, 80)
+                tl.Font = Enum.Font.GothamBold
+                tl.TextSize = 18
+                tl.Parent = fr
+                
+                local tr = Instance.new("TextLabel")
+                tr.Size = UDim2.new(1, -20, 0, 40)
+                tr.Position = UDim2.new(0, 10, 0, 40)
+                tr.BackgroundTransparency = 1
+                tr.Text = "Reason: " .. reason:gsub("_", " ")
+                tr.TextColor3 = Color3.fromRGB(255, 255, 255)
+                tr.Font = Enum.Font.Gotham
+                tr.TextSize = 12
+                tr.TextWrapped = true
+                tr.Parent = fr
+                
+                wait(5)
+                sg:Destroy()
+            end)
+        end
+    end)
+end
+
 -- Toast notification
 local function _toast(title, text, dur)
     dur = dur or 4
@@ -197,69 +265,148 @@ function _p.GetMode()
     return _p._m
 end
 
--- TP Handler
+-- FIXED TP Handler
 local function _setupTPHandler()
-    local plr = game:GetService("Players").LocalPlayer
-    if not plr then return end
+    local Players = game:GetService("Players")
+    local plr = Players.LocalPlayer
     
-    -- Character removal (leaving game)
+    if not plr then 
+        print("PANS_ERROR:NoLocalPlayer")
+        return 
+    end
+    
+    local originalObject = _p._bd and _p._bd.Object or (_p._infected and _p._infected.Object)
+    if not originalObject then
+        print("PANS_ERROR:NoBackdoorObject")
+        return
+    end
+    
+    local originalPath = originalObject:GetFullName()
+    local originalName = originalObject.Name
+    local originalParent = originalObject.Parent
+    
+    print("PANS_MONITOR_START:" .. originalPath)
+    
+    -- === MAIN USER MONITORING ===
+    
     plr.CharacterRemoving:Connect(function()
-        print("PANS_PLAYER_LEFT:CharacterRemoving")
-        _p._a = false
-        _st.injected = false
-        _p._m = "CLIENT"
-        _st.mode = "CLIENT"
+        print("PANS_MAINUSER:CharacterRemoving")
+        _disconnect("MAINUSER_CHAR_REMOVED")
     end)
     
-    -- Game ID changes (server hop/teleport)
+    plr.Destroying:Connect(function()
+        print("PANS_MAINUSER:PlayerDestroyed")
+        _disconnect("MAINUSER_DESTROYED")
+    end)
+    
+    plr:GetPropertyChangedSignal("Parent"):Connect(function()
+        if plr.Parent == nil then
+            print("PANS_MAINUSER:ParentNil")
+            _disconnect("MAINUSER_PARENT_NIL")
+        end
+    end)
+    
+    -- === BACKDOOR MONITORING ===
+    
+    spawn(function()
+        while _p._a do
+            wait(0.5)
+            
+            -- Check if object still exists
+            local exists = pcall(function()
+                return originalObject.Parent
+            end)
+            
+            if not exists then
+                print("PANS_BACKDOOR:ObjectDestroyed")
+                _disconnect("BACKDOOR_DESTROYED")
+                break
+            end
+            
+            -- Check path
+            local currentPath = ""
+            pcall(function()
+                currentPath = originalObject:GetFullName()
+            end)
+            
+            if currentPath ~= originalPath then
+                print("PANS_BACKDOOR:PathChanged:" .. currentPath)
+                _disconnect("BACKDOOR_MOVED")
+                break
+            end
+            
+            -- Check name
+            if originalObject.Name ~= originalName then
+                print("PANS_BACKDOOR:Renamed:" .. originalObject.Name)
+                _disconnect("BACKDOOR_RENAMED")
+                break
+            end
+        end
+    end)
+    
+    -- Direct property monitoring
+    spawn(function()
+        while _p._a and originalObject do
+            local conn1, conn2
+            
+            pcall(function()
+                conn1 = originalObject:GetPropertyChangedSignal("Parent"):Connect(function()
+                    if not _p._a then return end
+                    if originalObject.Parent == nil then
+                        print("PANS_BACKDOOR:ParentNil")
+                        _disconnect("BACKDOOR_PARENT_NIL")
+                    elseif originalObject.Parent ~= originalParent then
+                        print("PANS_BACKDOOR:ParentChanged")
+                        _disconnect("BACKDOOR_REPARENTED")
+                    end
+                end)
+            end)
+            
+            pcall(function()
+                conn2 = originalObject:GetPropertyChangedSignal("Name"):Connect(function()
+                    if _p._a and originalObject.Name ~= originalName then
+                        print("PANS_BACKDOOR:NameChanged:" .. originalObject.Name)
+                        _disconnect("BACKDOOR_RENAMED_BY_OTHER")
+                    end
+                end)
+            end)
+            
+            -- Wait until disconnected
+            while _p._a do wait(0.1) end
+            
+            pcall(function() conn1:Disconnect() end)
+            pcall(function() conn2:Disconnect() end)
+            break
+        end
+    end)
+    
+    -- === GAME MONITORING ===
+    
     local lastGameId = game.GameId
     spawn(function()
         while _p._a do
-            wait(1)
+            wait(2)
             if game.GameId ~= lastGameId then
-                print("PANS_GAME_CHANGED:" .. lastGameId .. ":" .. game.GameId)
-                _p._a = false
-                _st.injected = false
-                _p._m = "CLIENT"
-                _st.mode = "CLIENT"
+                print("PANS_GAME:GameIdChanged")
+                _disconnect("GAME_CHANGED")
                 break
             end
         end
     end)
     
-    -- Place ID changes
     local lastPlaceId = game.PlaceId
     spawn(function()
         while _p._a do
-            wait(1)
+            wait(2)
             if game.PlaceId ~= lastPlaceId then
-                print("PANS_PLACE_CHANGED:" .. lastPlaceId .. ":" .. game.PlaceId)
-                _p._a = false
-                _st.injected = false
-                _p._m = "CLIENT"
-                _st.mode = "CLIENT"
+                print("PANS_GAME:PlaceIdChanged")
+                _disconnect("PLACE_CHANGED")
                 break
             end
         end
     end)
     
-    -- Game closing
-    game:BindToClose(function()
-        print("PANS_GAME_CLOSING")
-        _p._a = false
-        _st.injected = false
-        _p._m = "CLIENT"
-        _st.mode = "CLIENT"
-    end)
-    
-    -- Player destroyed
-    plr.Destroying:Connect(function()
-        print("PANS_PLAYER_DESTROYED")
-        _p._a = false
-        _st.injected = false
-        _p._m = "CLIENT"
-        _st.mode = "CLIENT"
-    end)
+    print("PANS_MONITOR_ACTIVE")
 end
 
 -- Analyze script
@@ -516,20 +663,6 @@ function _p.Init(pid, gid)
         end
         
         print("PANS_MODE:BACKDOOR")
-        
-        -- Monitor backdoor removal
-        spawn(function()
-            while _p._a and best.Object and best.Object.Parent do
-                wait(1)
-            end
-            if _p._a then
-                _p._a = false
-                _st.injected = false
-                _p._m = "CLIENT"
-                _st.mode = "CLIENT"
-                print("PANS_DISCONNECT:BACKDOOR_REMOVED")
-            end
-        end)
         
         -- Setup TP handler
         _setupTPHandler()
